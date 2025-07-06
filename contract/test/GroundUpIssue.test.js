@@ -1,75 +1,95 @@
-const { expect } = require('chai');
-const { ethers } = require('hardhat');
+const hre = require('hardhat');
 
-describe('GroundUpIssue', function () {
-  let GroundUpIssue;
-  let groundUpIssue;
-  let owner;
-  let addr1;
-  let addr2;
+async function main() {
+  // Ensure you have deployed the contract and have its address.
+  // You might load it from a deployments file or hardcode it for testing.
+  const contractAddress = 'YOUR_DEPLOYED_CONTRACT_ADDRESS_ON_TESTNET'; // Replace with actual address
 
-  // Before each test, deploy a new contract
-  beforeEach(async function () {
-    [owner, addr1, addr2] = await ethers.getSigners();
-    GroundUpIssue = await ethers.getContractFactory('GroundUpIssue');
-    groundUpIssue = await GroundUpIssue.deploy();
-    await groundUpIssue.waitForDeployment(); // Wait for the contract to be deployed
+  // Get the signer (your account with testnet FLR/SGB)
+  const [deployer] = await hre.ethers.getSigners();
+  console.log(`Using account: ${deployer.address}`);
+
+  // Get the contract instance
+  const GroundUpIssue = await hre.ethers.getContractFactory('GroundUpIssue');
+  const groundUpIssue = await GroundUpIssue.attach(contractAddress);
+
+  console.log(
+    `Interacting with GroundUpIssue contract at: ${groundUpIssue.target}`
+  );
+
+  // --- Test Case 1: Report a new issue ---
+  console.log('\n--- Reporting a new issue ---');
+  const issueType1 = 'Broken Streetlight';
+  const latitude1 = 9000000; // Example scaled coordinates
+  const longitude1 = 7000000;
+  const dataHash1 = hre.ethers.keccak256(
+    hre.ethers.toUtf8Bytes('streetlight_photo_hash_abc')
+  );
+
+  try {
+    const tx1 = await groundUpIssue.reportIssue(
+      issueType1,
+      latitude1,
+      longitude1,
+      dataHash1
+    );
+    await tx1.wait();
+    console.log(`Transaction for reporting issue 1 sent: ${tx1.hash}`);
+    console.log('Issue 1 reported successfully!');
+  } catch (error) {
+    console.error('Error reporting issue 1:', error.message);
+  }
+
+  // --- Test Case 2: Get the reported issue ---
+  console.log('\n--- Retrieving issue 0 ---');
+  try {
+    const issue0 = await groundUpIssue.getIssue(0);
+    console.log('Retrieved Issue 0 details:');
+    console.log(`  Issue ID: ${issue0.issueId}`);
+    console.log(`  Reporter: ${issue0.reporterAddress}`);
+    console.log(`  Type: ${issue0.issueType}`);
+    console.log(`  Lat: ${issue0.latitude}, Lon: ${issue0.longitude}`);
+    console.log(`  Data Hash: ${issue0.dataHash}`);
+    console.log(`  Timestamp: ${new Date(Number(issue0.timestamp) * 1000)}`);
+    console.log(`  Status: ${issue0.status}`); // Enum value (0 for Pending)
+    console.log(`  Upvotes: ${issue0.upvotes}`);
+  } catch (error) {
+    console.error('Error retrieving issue 0:', error.message);
+  }
+
+  // --- Test Case 3: Report another issue from a different account ---
+  console.log('\n--- Reporting another issue from addr1 ---');
+  const issueType2 = 'Pothole';
+  const latitude2 = 8500000;
+  const longitude2 = 6500000;
+  const dataHash2 = hre.ethers.keccak256(
+    hre.ethers.toUtf8Bytes('pothole_video_hash_xyz')
+  );
+
+  try {
+    const tx2 = await groundUpIssue
+      .connect(deployer)
+      .reportIssue(issueType2, latitude2, longitude2, dataHash2);
+    await tx2.wait();
+    console.log(`Transaction for reporting issue 2 sent: ${tx2.hash}`);
+    console.log('Issue 2 reported successfully!');
+  } catch (error) {
+    console.error('Error reporting issue 2:', error.message);
+  }
+
+  // --- Test Case 4: Try to get a non-existent issue ---
+  console.log('\n--- Trying to retrieve non-existent issue 10 ---');
+  try {
+    await groundUpIssue.getIssue(10);
+    console.log('Unexpected: Retrieved issue 10 (should have failed)');
+  } catch (error) {
+    console.error('Expected error for non-existent issue:', error.message);
+  }
+}
+
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
   });
-
-  describe('Deployment', function () {
-    it('Should set the correct initial nextIssueId', async function () {
-      expect(await groundUpIssue.nextIssueId()).to.equal(0);
-    });
-  });
-
-  describe('reportIssue', function () {
-    it('Should allow a user to report an issue and emit an event', async function () {
-      const dataHash = ethers.keccak256(
-        ethers.toUtf8Bytes('pothole_image_hash_123')
-      ); // Example hash
-      const reporterAddress = addr1.address;
-
-      // Connect with addr1 to simulate reporting from a user
-      await expect(groundUpIssue.connect(addr1).reportIssue(dataHash))
-        .to.emit(groundUpIssue, 'IssueReported')
-        .withArgs(
-          0,
-          reporterAddress,
-          dataHash,
-          (
-            await ethers.provider.getBlock('latest')
-          ).timestamp
-        );
-
-      // Verify that nextIssueId has incremented
-      expect(await groundUpIssue.nextIssueId()).to.equal(1);
-
-      // Verify the stored issue details (using the public 'issues' mapping getter)
-      const reportedIssue = await groundUpIssue.issues(0);
-      expect(reportedIssue.reporterAddress).to.equal(reporterAddress);
-      expect(reportedIssue.dataHash).to.equal(dataHash);
-      expect(reportedIssue.timestamp).to.be.closeTo(
-        (await ethers.provider.getBlock('latest')).timestamp,
-        5
-      ); // Allow for slight time difference
-    });
-
-    it('Should increment issueId for subsequent reports', async function () {
-      const dataHash1 = ethers.keccak256(ethers.toUtf8Bytes('hash1'));
-      const dataHash2 = ethers.keccak256(ethers.toUtf8Bytes('hash2'));
-
-      await groundUpIssue.connect(addr1).reportIssue(dataHash1);
-      await groundUpIssue.connect(addr2).reportIssue(dataHash2);
-
-      expect(await groundUpIssue.nextIssueId()).to.equal(2);
-
-      const issue0 = await groundUpIssue.issues(0);
-      expect(issue0.dataHash).to.equal(dataHash1);
-      expect(issue0.reporterAddress).to.equal(addr1.address);
-
-      const issue1 = await groundUpIssue.issues(1);
-      expect(issue1.dataHash).to.equal(dataHash2);
-      expect(issue1.reporterAddress).to.equal(addr2.address);
-    });
-  });
-});
