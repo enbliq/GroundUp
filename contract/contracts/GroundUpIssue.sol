@@ -1,56 +1,54 @@
-
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-contract GroundUpIssue {
-    
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract GroundUpIssue is Ownable { // Inherit from Ownable
     enum Status { Pending, UnderReview, Resolved, Rejected }
 
     struct Issue {
-        uint256 issueId;             
-        address reporterAddress;     
-        string issueType;            
-        int256 latitude;             
-        int256 longitude;            
-        bytes32 dataHash;            
-        uint256 timestamp;           
-        Status status;               
-        uint256 upvotes;             
-        uint256 commentsCount;       
-        uint256 latestStatusUpdateTimestamp; 
+        uint256 issueId;
+        address reporterAddress;
+        string issueType;
+        int256 latitude;
+        int256 longitude;
+        bytes32 dataHash;
+        uint256 timestamp;
+        Status status;
+        uint256 upvotes;
+        uint256 commentsCount;
+        uint256 latestStatusUpdateTimestamp;
     }
 
     
     mapping(uint256 => Issue) public issues;
-    uint256 public nextIssueId; 
+    uint256 public nextIssueId; // Counter for unique issue IDs
 
-    
     event IssueReported(
-        uint256 indexed issueId,    
-        address indexed reporter,   
-        string issueType,           
-        int256 latitude,            
-        int256 longitude,           
-        bytes32 dataHash,           
-        uint256 timestamp           
+        uint256 indexed issueId,
+        address indexed reporter,
+        string issueType,
+        int256 latitude,
+        int256 longitude,
+        bytes32 dataHash,
+        uint256 timestamp
     );
 
-    
     event StatusUpdated(
-        uint256 indexed issueId,    
-        Status newStatus,           
-        address indexed updater,    
-        uint256 timestamp           
+        uint256 indexed issueId,
+        Status newStatus,
+        address indexed updater,
+        uint256 timestamp
     );
 
-    
     event IssueUpvoted(
-        uint256 indexed issueId,    
-        address indexed voter,      
-        uint256 newUpvoteCount      
+        uint224 indexed issueId, // Changed to uint224 to allow more indexed events
+        address indexed voter,
+        uint256 newUpvoteCount
     );
 
-    constructor() {
-        nextIssueId = 0; 
+    constructor() Ownable(msg.sender) { // Initialize Ownable with the deployer as owner
+        nextIssueId = 0;
     }
 
     /**
@@ -68,7 +66,6 @@ contract GroundUpIssue {
     ) public {
         uint256 currentIssueId = nextIssueId;
 
-        
         issues[currentIssueId] = Issue({
             issueId: currentIssueId,
             reporterAddress: msg.sender,
@@ -77,16 +74,14 @@ contract GroundUpIssue {
             longitude: _longitude,
             dataHash: _dataHash,
             timestamp: block.timestamp,
-            status: Status.Pending, 
-            upvotes: 0,             
-            commentsCount: 0,       
-            latestStatusUpdateTimestamp: block.timestamp 
+            status: Status.Pending,
+            upvotes: 0,
+            commentsCount: 0,
+            latestStatusUpdateTimestamp: block.timestamp
         });
 
-        
         nextIssueId++;
 
-        
         emit IssueReported(
             currentIssueId,
             msg.sender,
@@ -96,5 +91,33 @@ contract GroundUpIssue {
             _dataHash,
             block.timestamp
         );
+    }
+
+    /**
+     * @dev Retrieves the full details of a specific issue by its ID.
+     * @param _issueId The unique ID of the issue to retrieve.
+     * @return An Issue struct containing all details of the requested issue.
+     */
+    function getIssue(uint256 _issueId) public view returns (Issue memory) {
+        require(_issueId < nextIssueId, "Issue does not exist");
+        return issues[_issueId];
+    }
+
+    /**
+     * @dev Allows the owner (or authorized address) to update the status of an issue.
+     * @param _issueId The ID of the issue to update.
+     * @param _newStatus The new status for the issue.
+     */
+    function updateIssueStatus(uint256 _issueId, Status _newStatus) public onlyOwner {
+        require(_issueId < nextIssueId, "Issue does not exist");
+
+        Issue storage issueToUpdate = issues[_issueId];
+
+        require(issueToUpdate.status != _newStatus, "Status is already the same");
+
+        issueToUpdate.status = _newStatus;
+        issueToUpdate.latestStatusUpdateTimestamp = block.timestamp;
+
+        emit StatusUpdated(_issueId, _newStatus, msg.sender, block.timestamp);
     }
 }
